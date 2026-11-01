@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RNN sentiment analysis, step by step</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EDF1F6;--surf:#fff;--ink:#14213D;--mut:#5B6B85;--line:#C9D3E2;--pos:#0E7C86;--neg:#B4235A;--mem:#D99A00;--on:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101726;--surf:#18223A;--ink:#E8EEF9;--mut:#93A3BF;--line:#2C3A58;--pos:#3CC4CF;--neg:#FF6B9A;--mem:#F2B93B;--on:#101726;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#101726;--surf:#18223A;--ink:#E8EEF9;--mut:#93A3BF;--line:#2C3A58;--pos:#3CC4CF;--neg:#FF6B9A;--mem:#F2B93B;--on:#101726;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.5 "Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:880px;margin:0 auto;padding:1.5rem 1rem 2.5rem}
+h1{font-size:clamp(1.5rem,4vw,2.1rem);font-weight:800;letter-spacing:-.02em;line-height:1.15;margin:0 0 .3rem}
+.sub{color:var(--mut);margin:0 0 1.2rem}
+.rail{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;padding:0;margin:0 0 1rem}
+.rail button{font:inherit;font-size:.9rem;display:flex;align-items:center;gap:.5rem;padding:.35rem .85rem;border:1.5px solid var(--line);border-radius:999px;background:var(--surf);color:var(--mut);cursor:pointer;transition:.3s}
+.rail button.past{color:var(--ink);border-color:var(--ink)}
+.rail button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.dots{display:inline-flex;gap:3px}.dots i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.3;transition:.3s}.dots i.f{opacity:1}
+button:focus-visible{outline:3px solid var(--mem);outline-offset:2px}
+.board{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:1.1rem 1rem 1.2rem;overflow-x:auto}
+#inner{min-width:600px}
+.raw{white-space:pre;text-align:center;font-weight:600;letter-spacing:-.01em;font-size:clamp(1.3rem,4.6vw,2.2rem);transition:color .4s;padding:.2rem 0}
+.raw.dim{font-size:1rem;color:var(--mut)}
+.raw.type span{animation:ty .01s backwards;animation-delay:calc(var(--k)*55ms)}
+@keyframes ty{from{opacity:0}to{opacity:1}}
+@keyframes pop{from{opacity:0;transform:translateY(-8px) scale(.9)}to{opacity:1;transform:none}}
+.row{display:flex;align-items:center;gap:.5rem;max-height:0;opacity:0;overflow:hidden;transition:max-height .5s,opacity .4s}
+.row.on{max-height:150px;opacity:1;margin-top:.7rem}
+.row.r-rnn{padding:.3rem 0}
+.row.r-out{align-items:stretch}.row.r-out.on{max-height:200px}
+.lab{flex:0 0 74px;font-size:.75rem;line-height:1.2;color:var(--mut);font-weight:600}
+.it{flex:1;display:flex;flex-direction:column;align-items:center;gap:.3rem;position:relative;padding:.15rem 0;transition:opacity .4s}
+.row.on .it{animation:pop .5s backwards;animation-delay:calc(var(--i)*90ms)}
+.it.wait{opacity:.3}
+.chip{padding:.35rem .8rem;border:1.5px solid var(--line);border-radius:8px;background:var(--bg);font-weight:600;transition:.3s}
+.chip.id{color:var(--mut);font-variant-numeric:tabular-nums;padding:.2rem .7rem;font-size:.9rem}
+.it.act .chip:not(.id){border-color:var(--mem);background:color-mix(in srgb,var(--mem) 22%,var(--surf))}
+.vec{display:flex;flex-direction:column;gap:2px;border-radius:4px;transition:.3s}
+.vec i{font-style:normal;font-size:.72rem;width:50px;text-align:center;padding:2px 0;border-radius:4px;font-variant-numeric:tabular-nums}
+.row.on .vec i{animation:pop .4s backwards;animation-delay:calc(var(--d) + var(--i)*90ms)}
+.r-vec .it.act .vec{outline:2px solid var(--mem);outline-offset:3px}
+.box{width:64px;padding:.5rem 0;border:2px solid var(--line);border-radius:10px;text-align:center;font-weight:800;background:var(--surf);transition:.35s;position:relative;z-index:1}
+.it.act .box{border-color:var(--mem);background:color-mix(in srgb,var(--mem) 22%,var(--surf));box-shadow:0 0 0 4px color-mix(in srgb,var(--mem) 25%,transparent)}
+.it.done .box{border-color:var(--ink)}
+.r-rnn .it::after{content:"";position:absolute;top:50%;left:calc(50% + 34px);width:calc(100% - 68px);height:2px;background:var(--line);transition:.4s}
+.r-rnn .it:last-child::after{display:none}
+.r-rnn .it.done::after{background:var(--mem)}
+.mem{display:flex;gap:5px}
+.mem u{display:block;position:relative;width:12px;height:56px;border-radius:3px;background:linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat,color-mix(in srgb,var(--line) 35%,transparent)}
+.mem s{position:absolute;left:0;right:0;height:0;border-radius:2px;transition:height .7s}
+.meter{position:relative;width:70px;height:6px;margin-top:4px;border-radius:3px;background:linear-gradient(90deg,var(--neg),var(--line) 50%,var(--pos))}
+.meter b{position:absolute;top:-3px;left:50%;width:4px;height:12px;margin-left:-2px;border-radius:2px;background:var(--ink);transition:left .8s}
+.it small{font-size:.72rem;height:1.1em;font-variant-numeric:tabular-nums;color:var(--mut)}
+.it.fin .mem u{outline:2px solid var(--mem);outline-offset:2px}
+.outbox{flex:1;display:flex;flex-direction:column;gap:.5rem;padding:.7rem .9rem;border:1.5px dashed var(--line);border-radius:10px}
+.eq{font:600 .9rem ui-monospace,Menlo,Consolas,monospace}
+.pb{display:flex;height:26px;border-radius:8px;overflow:hidden}
+.pb span{transition:flex-basis 1s}
+#pn{background:var(--neg);flex:0 0 50%}#pp{background:var(--pos);flex:1}
+.lg{display:flex;justify-content:space-between;font-size:.85rem;font-weight:600;font-variant-numeric:tabular-nums}
+.lg span:first-child{color:var(--neg)}.lg span:last-child{color:var(--pos)}
+.verdict{font-size:1.1rem}.verdict strong{font-size:1.4rem;font-weight:800;color:var(--neg)}
+.cap{margin-top:1rem;min-height:9.5rem}
+.cap h2{font-size:1.25rem;font-weight:800;margin:0 0 .3rem}
+.cap p{margin:0;max-width:62ch}
+.cap code{display:inline-block;margin-top:.5rem;padding:.25rem .6rem;background:var(--surf);border:1px solid var(--line);border-radius:6px;font:600 .88rem ui-monospace,Menlo,Consolas,monospace}
+.ctl{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.8rem}
+.ctl button{font:inherit;font-weight:600;padding:.55rem 1.1rem;border:1.5px solid var(--ink);border-radius:10px;background:transparent;color:var(--ink);cursor:pointer}
+.ctl #play{background:var(--ink);color:var(--bg);min-width:6.5rem}
+.ctl button:disabled{opacity:.35;cursor:default}
+#fc{margin-left:auto;color:var(--mut);font-size:.9rem}
+.it.act .box{transform:scale(1.15)}
+@keyframes fade{from{opacity:0}}
+.xp{display:none;margin-top:.9rem;border:1.5px solid var(--mem);border-radius:12px;padding:.8rem .9rem;background:color-mix(in srgb,var(--mem) 7%,var(--surf));position:relative}
+.xp.on{display:block}
+.xp::before{content:'';position:absolute;top:-8px;left:var(--px,50%);width:14px;height:14px;background:inherit;border-left:1.5px solid var(--mem);border-top:1.5px solid var(--mem);transform:translateX(-50%) rotate(45deg);transition:left .5s}
+.xp h3,.sm h3{margin:0 0 .4rem;font-size:1rem}
+.vs{font-size:.8rem;color:var(--mut);margin:0 0 .5rem}
+.xt{width:100%;border-collapse:collapse;font-size:.85rem;font-variant-numeric:tabular-nums}
+.xt th{font-weight:600;color:var(--mut);text-align:center;padding:0 .3rem .3rem;font-size:.75rem;line-height:1.25}
+.xt td{padding:2px .3rem;text-align:center}
+.xt td:first-child,.xt th:first-child{text-align:left;font-weight:600;white-space:nowrap}
+.xt td i{display:block;font-style:normal;padding:3px 0;border-radius:5px}
+.xp.on .xt td i{animation:pop .45s backwards;animation-delay:calc(var(--c)*320ms)}
+.sm{display:none;margin-top:.9rem}.sm.on{display:block}
+.st{width:100%;border-collapse:collapse;font-size:.85rem}
+.st td,.st th{padding:.4rem .5rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.st th{color:var(--mut);font-size:.75rem;font-weight:600}
+.lean{font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sm.on tr{animation:fade .5s backwards;animation-delay:calc(var(--r)*260ms)}
+.hu{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem}
+.hc{border:1px solid var(--line);border-radius:10px;padding:.5rem .6rem;font-size:.82rem;line-height:1.35}
+.sm.on .hc{animation:fade .5s backwards;animation-delay:calc(1.5s + var(--r)*220ms)}
+.hb{position:relative;height:8px;border-radius:4px;margin:.35rem 0;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat,color-mix(in srgb,var(--line) 35%,transparent)}
+.hb s{position:absolute;top:0;bottom:0;border-radius:4px}
+.note{font-size:.78rem;color:var(--mut);margin:.7rem 0 0}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+.inp{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 .5rem}
+.inp input{flex:1 1 260px;font:inherit;padding:.55rem .8rem;border:1.5px solid var(--ink);border-radius:10px;background:var(--surf);color:var(--ink)}
+.inp input:focus-visible,.ex button:focus-visible{outline:3px solid var(--mem);outline-offset:2px}
+.inp button{font:inherit;font-weight:600;padding:.55rem 1.3rem;border:1.5px solid var(--ink);border-radius:10px;background:var(--ink);color:var(--bg);cursor:pointer}
+.ex{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 .5rem}
+.ex button{font:inherit;font-size:.8rem;padding:.2rem .65rem;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--mut);cursor:pointer}
+#msg{min-height:1.3em;font-size:.85rem;color:var(--neg);margin:0 0 .4rem}
+</style>
+</head>
+<body>
+<main>
+<h1>How an RNN reads your sentence</h1>
+<p class="sub">Type a sentence and watch a sentiment classifier read it, one step at a time.</p>
+<div class="inp"><input id="txt" value="the movie was not good" maxlength="80" aria-label="Your sentence"><button id="go">Run</button></div>
+<div class="ex"><button>the movie was not good</button><button>I loved this film</button><button>not bad at all</button><button>a boring and awful plot</button></div>
+<p id="msg"></p>
+<ol class="rail" id="rail"></ol>
+<section class="board"><div id="inner"></div></section>
+<div class="cap" aria-live="polite"><h2 id="ct"></h2><p id="cp"></p><code id="cf"></code></div>
+<div class="ctl"><button id="prev">Back</button><button id="play">Pause</button><button id="next">Next</button><span id="fc"></span></div>
+<p class="note">Demo model: a small hand-built word list (about 50 opinion words and a few negations) with hand-set weights, not a trained network. Words it doesn’t know count as neutral, and only the first 8 words are used.</p>
+</main>
+<script>
+const $=s=>document.querySelector(s),SUB="₁₂₃₄₅₆₇₈",U=['polarity','negation seen','opinion present','tone'];
+const LEX={good:.9,great:1,excellent:1,amazing:1,awesome:1,love:1,loved:1,like:.5,liked:.5,nice:.6,fun:.6,best:1,wonderful:1,brilliant:1,beautiful:.8,enjoy:.7,enjoyed:.7,happy:.8,perfect:1,fantastic:1,
+bad:-.9,terrible:-1,awful:-1,worst:-1,boring:-.8,hate:-1,hated:-1,poor:-.7,dull:-.7,waste:-.8,horrible:-1,disappointing:-.8,disappointed:-.8,ugly:-.7,sad:-.6,annoying:-.7,slow:-.4,weak:-.6,mess:-.7};
+const NEG=new Set(["not","no","never","isn't","wasn't","don't","didn't","can't","hardly","without","isnt","wasnt","dont","didnt","cant"]);
+const fmt=v=>(v<0?"−":"")+Math.abs(v).toFixed(2),sg=v=>(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(2);
+const col=v=>{v=Math.max(-1,Math.min(1,v));return `color-mix(in srgb, var(--${v<0?'neg':'pos'}) ${Math.round(Math.abs(v)*70)+8}%, var(--surf))`};
+const hs=w=>[...w].reduce((a,c)=>(a*31+c.charCodeAt(0))%9973,7);
+const inner=$('#inner');let W,ID,X,WX,UH,H,L,F,n,P,T0,xp,sm,cur=0,timer=null;
+function run(words){W=words;n=words.length;X=[];WX=[];UH=[];H=[];L=[];ID=words.map(w=>hs(w)%900+1);let h=[0,0,0,0];
+words.forEach(w=>{const v=LEX[w]||0,g=NEG.has(w)?1:0,[p,q,o,t]=h;
+const x=[v,g*.9,Math.abs(v),hs(w)%61/100-.3],wx=[1.6*v,2.44*x[1],2*x[2],v],uh=[.5*p-3.2*q*v,.9*q,.7*o,.5*t-2*q*v];
+h=wx.map((a,j)=>Math.tanh(a+uh[j]));X.push(x);WX.push(wx);UH.push(uh);H.push(h);L.push((2.2*h[0]+1.6*h[3])/3.8)});
+P=1/(1+Math.exp(-(2.2*H[n-1][0]+1.6*H[n-1][3])))}
+function note(i){const w=W[i],v=LEX[w]||0,q=i?H[i-1][1]:0,h=H[i];
+if(NEG.has(w))return `Negation word: “negation seen” rises to ${fmt(h[1])}, so the memory is primed to reverse the next opinion word.`;
+if(v)return q>.3?`“${w}” is ${v>0?'positive':'negative'} on its own, but the memory of a negation reverses it: polarity moves to ${fmt(h[0])}.`:`“${w}” is a ${v>0?'positive':'negative'} opinion word, so polarity moves to ${fmt(h[0])}.`;
+return i?'Neutral word (not in the demo word list). Memory is carried forward, slightly faded.':'Neutral word. Memory starts empty and barely moves.'}
+function mk(k,lab,need,item,max=4){const r=document.createElement('div');r.className='row r-'+k;r.dataset.need=need;r.dataset.max=max;
+r.innerHTML=`<b class='lab'>${lab}</b>`+W.map((_,i)=>`<div class='it' data-i='${i}' style='--i:${i}'>${item(i)}</div>`).join('');inner.appendChild(r)}
+function renderX(s,t){xp.classList.toggle('on',s===3);if(s!==3)return;
+const p=t?H[t-1]:[0,0,0,0],f=v=>`<i style='background:${col(v)}'>${fmt(v)}</i>`;
+xp.style.setProperty('--px',`calc(82px + (100% - 82px)*${(t+.5)/n})`);
+xp.innerHTML=`<h3>Inside the RNN cell at “${W[t]}”</h3><p class='vs'>new word x${SUB[t]} = [${X[t].map(fmt).join(', ')}] &nbsp;·&nbsp; old memory h${t?SUB[t-1]:'₀'} = [${p.map(fmt).join(', ')}]</p><table class='xt'><tr><th></th><th>from the word<br>W·x</th><th>from old memory<br>U·h</th><th>sum<br>z</th><th>new memory<br>h = tanh(z)</th></tr>`+U.map((u,j)=>`<tr><td>${u}</td>`+[WX[t][j],UH[t][j],WX[t][j]+UH[t][j],H[t][j]].map((v,c)=>`<td style='--c:${c}'>${f(v)}</td>`).join('')+`</tr>`).join('')+`</table>`}
+function renderS(s){sm.classList.toggle('on',s===5);if(s!==5||sm.innerHTML)return;const h=H[n-1];
+const MM=[h[0]<-.25?'Leans negative.':h[0]>.25?'Leans positive.':'Near neutral.',h[1]>.3?'A negation word is still in memory.':'No active negation in memory.',h[2]>.3?'An opinion word was seen.':'No clear opinion word seen.',h[3]<-.25?'Critical tone.':h[3]>.25?'Warm tone.':'Flat tone.'];
+sm.innerHTML=`<h3>What each cell did</h3><table class='st'><tr><th>Cell</th><th>Reads</th><th>Memory lean</th><th>What happened</th></tr>`+W.map((w,i)=>{const b=i?L[i-1]:0,a=L[i];return `<tr style='--r:${i}'><td>${i+1}</td><td>“${w}”</td><td class='lean'>${sg(b)} → <span style='color:var(--${a<0?'neg':'pos'})'>${sg(a)}</span></td><td>${note(i)}</td></tr>`}).join('')+`</table><h3 style='margin-top:1rem'>What memory h${SUB[n-1]} holds</h3><div class='hu'>`+U.map((u,j)=>{const v=h[j],k=v<0?'neg':'pos';return `<div class='hc' style='--r:${j}'><b>${u}</b> <span style='color:var(--${k})'>${fmt(v)}</span><div class='hb'><s style='${v<0?'right':'left'}:50%;width:${Math.abs(v)*50}%;background:var(--${k})'></s></div>${MM[j]}</div>`}).join('')+`</div><p class='note'>The unit names are our own reading of the pattern. In a trained model nobody labels them, and one unit often mixes several meanings. h${SUB[n-1]} is all the classifier sees: the whole sentence squeezed into these 4 numbers.</p>`}
+function show(f){cur=f;const {s,t}=F[f],last=n-1;
+inner.querySelectorAll('.row').forEach(r=>r.classList.toggle('on',s>=+r.dataset.need&&s<=+(r.dataset.max||4)));
+const raw=$('#raw');raw.classList.toggle('dim',s>=1);
+if(f===0){raw.classList.remove('type');void raw.offsetWidth;raw.classList.add('type')}
+const a=s===3?t:s>=4?last:-1;
+inner.querySelectorAll('.it').forEach(el=>{const i=+el.dataset.i;
+el.classList.toggle('act',s===3&&i===t);el.classList.toggle('done',s>=3&&i<=a&&!(s===3&&i===t));el.classList.toggle('wait',s===3&&i>t);el.classList.toggle('fin',s>=4&&i===last)});
+inner.querySelectorAll('.r-mem .it').forEach(el=>{const i=+el.dataset.i,on=s>=3&&i<=a;
+el.querySelectorAll('s').forEach((b,j)=>{const v=on?H[i][j]:0;b.style.height=Math.abs(v)*50+'%';b.style.background=v<0?'var(--neg)':'var(--pos)';
+if(v<0){b.style.top='50%';b.style.bottom='auto'}else{b.style.bottom='50%';b.style.top='auto'}});
+el.querySelector('.meter b').style.left=(on?(L[i]+1)*50:50)+'%';
+el.querySelector('small').textContent=on?'lean '+sg(L[i]):''});
+$('#pn').style.flexBasis=s===4?(1-P)*100+'%':'50%';
+let c;
+if(s===0)c=['Raw text','The model starts with a plain string. Computers can’t do math on letters, so the first job is turning text into numbers.',`“${T0}”`];
+else if(s===1)c=['Tokenize','Split the sentence into tokens and look each one up in a vocabulary. Every word becomes an integer ID. The IDs are only labels: a bigger number means nothing.',`tokens = [${ID.join(', ')}]`];
+else if(s===2)c=['Embedding','Each ID is swapped for a learned vector, so similar words get similar numbers. We show 4 values per word; real models use 100 to 300 or more.','x_t = Embedding[id_t]'];
+else if(s===3)c=[`RNN read: “${W[t]}” (word ${t+1} of ${n})`,note(t)+(t?'':' The bars are the memory h; the marker shows its overall lean.'),`h${SUB[t]} = tanh(W·x${SUB[t]} + U·h${t?SUB[t-1]:'₀'} + b)`];
+else if(s===4)c=['Prediction',`The last hidden state h${SUB[last]} summarizes the whole sentence. A dense layer and a sigmoid squeeze it into one probability that the text is positive: ${P.toFixed(2)}.`,`ŷ = σ(w · h${SUB[last]} + b) = ${P.toFixed(2)}`];
+else c=['What memory h holds','The whole read, replayed. Each cell nudged the memory a little. The table shows what every cell did, and the four units show what the final memory ended up holding.',`h${SUB[last]} = [${H[last].map(fmt).join(', ')}]`];
+renderX(s,t);renderS(s);
+$('#ct').textContent=c[0];$('#cp').textContent=c[1];$('#cf').textContent=c[2];
+$('#fc').textContent=`Step ${f+1} of ${F.length}`;
+document.querySelectorAll('#rail button').forEach((b,k)=>{b.classList.toggle('on',s===k);b.classList.toggle('past',s>k)});
+document.querySelectorAll('.dots i').forEach((d,j)=>d.classList.toggle('f',s>3||(s===3&&j<=t)));
+$('#prev').disabled=f===0;$('#next').disabled=f===F.length-1;label()}
+function label(){$('#play').textContent=timer?'Pause':cur===F.length-1?'Replay':'Play'}
+function stop(){clearInterval(timer);timer=null;if(F)label()}
+function play(){if(cur===F.length-1)show(0);timer=setInterval(()=>{show(cur+1);if(cur===F.length-1)stop()},2400);label()}
+function load(text){const all=text.toLowerCase().replace(/[’]/g,"'").match(/[a-z']+/g)||[],words=all.slice(0,8);
+if(!words.length){$('#msg').textContent='Type at least one word.';return}
+$('#msg').textContent=all.length>8?'Using the first 8 words.':'';
+stop();run(words);T0=words.join(' ');
+F=[{s:0},{s:1},{s:2},...words.map((_,t)=>({s:3,t})),{s:4},{s:5}];
+inner.style.minWidth=Math.max(600,82+n*84)+'px';
+inner.innerHTML=`<div class='raw type' id='raw'>${[...'“'+T0+'”'].map((c,k)=>`<span style='--k:${k}'>${c}</span>`).join('')}</div>`;
+mk('word','Tokens',1,i=>`<span class='chip'>${W[i]}</span>`,5);
+mk('id','Token ID',1,i=>`<span class='chip id'>${ID[i]}</span>`);
+mk('vec','Embedding x',2,i=>`<div class='vec'>${X[i].map((v,j)=>`<i style='--d:${j*70}ms;background:${col(v)}'>${fmt(v)}</i>`).join('')}</div>`);
+mk('rnn','RNN cell',3,()=>`<div class='box'>RNN</div>`,5);
+mk('mem','Memory h',3,()=>`<div class='mem'><u><s></s></u><u><s></s></u><u><s></s></u><u><s></s></u></div><div class='meter'><b></b></div><small></small>`,5);
+xp=document.createElement('div');xp.className='xp';inner.appendChild(xp);
+const o=document.createElement('div');o.className='row r-out';o.dataset.need=4;
+const vd=P>=.6?['Positive','pos']:P<=.4?['Negative','neg']:['Mixed or neutral','mut'];
+o.innerHTML=`<b class='lab'>Prediction</b><div class='outbox'><div class='eq'>ŷ = σ(w · h${SUB[n-1]} + b) = ${P.toFixed(2)}</div><div class='pb'><span id='pn'></span><span id='pp'></span></div><div class='lg'><span>Negative ${Math.round((1-P)*100)}%</span><span>Positive ${Math.round(P*100)}%</span></div><div class='verdict'>Sentiment: <strong style='color:var(--${vd[1]})'>${vd[0]}</strong></div></div>`;
+inner.appendChild(o);sm=document.createElement('div');sm.className='sm';inner.appendChild(sm);
+const N=['Raw text','Tokenize','Embedding','RNN read','Prediction','What h holds'],ST=[0,1,2,3,n+3,n+4];
+$('#rail').innerHTML=N.map((m,k)=>`<li><button data-f='${ST[k]}'>${k+1}. ${m}${k===3?"<span class='dots'>"+'<i></i>'.repeat(n)+'</span>':''}</button></li>`).join('');
+show(0);if(!matchMedia('(prefers-reduced-motion:reduce)').matches)play()}
+$('#play').onclick=()=>timer?stop():play();
+$('#next').onclick=()=>{stop();if(cur<F.length-1)show(cur+1)};
+$('#prev').onclick=()=>{stop();if(cur>0)show(cur-1)};
+$('#rail').onclick=e=>{const b=e.target.closest('button');if(b){stop();show(+b.dataset.f)}};
+$('#go').onclick=()=>load($('#txt').value);
+$('#txt').onkeydown=e=>{if(e.key==='Enter')load(e.target.value)};
+document.querySelectorAll('.ex button').forEach(b=>b.onclick=()=>{$('#txt').value=b.textContent;load(b.textContent)});
+addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(e.key==='ArrowRight')$('#next').click();if(e.key==='ArrowLeft')$('#prev').click()});
+load($('#txt').value);
+</script>
+</body>
+</html>
